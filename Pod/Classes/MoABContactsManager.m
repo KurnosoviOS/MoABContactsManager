@@ -183,6 +183,7 @@
         ABRecordRef contactRef = ABAddressBookGetPersonWithRecordID(_addressBook, contactRecordId);
         
         ABAddressBookRemoveRecord(_addressBook, contactRef, errorRef);
+        ABAddressBookSave(_addressBook, errorRef);
         
         if (completion) {
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -202,12 +203,48 @@
     
     dispatch_async(_contactsManagerQueue, ^{
         
-        NSArray *contactsFromAB = (__bridge_transfer NSArray *)ABAddressBookCopyArrayOfAllPeople(_addressBook);
+        
+        ///
+        
+        
+        NSMutableSet *unifiedRecordsSet = [NSMutableSet set];
+        
+        NSArray *unifiedRecordsSetArray;
+        
+        NSSet *objects;
+        
+        CFArrayRef records = ABAddressBookCopyArrayOfAllPeople(_addressBook);
+        for (CFIndex i = 0; i < CFArrayGetCount(records); i++) {
+            NSMutableSet *contactSet = [NSMutableSet set];
+            
+            ABRecordRef record = CFArrayGetValueAtIndex(records, i);
+            ABRecordID contactId = ABRecordGetRecordID(record);
+            [contactSet addObject:(__bridge id)record];
+            
+            NSArray *linkedRecordsArray = (__bridge NSArray *)ABPersonCopyArrayOfAllLinkedPeople(record);
+            
+            [contactSet addObjectsFromArray:linkedRecordsArray];
+            objects = [[NSSet alloc]initWithSet:contactSet];
+            
+            [unifiedRecordsSet addObject:objects];
+            CFRelease(record);
+        }
+        
+        CFRelease(records);
+        
+        unifiedRecordsSetArray = [unifiedRecordsSet allObjects];
+        
+        
+        
+        NSMutableArray <NSSet *> *resultArray = [NSMutableArray new];
+        for (NSSet *objects in unifiedRecordsSetArray) {
+            [resultArray addObject:[objects allObjects].firstObject];
+        }
         
         NSMutableArray *contacts = [NSMutableArray array];
     
         
-        for (id contactObj in contactsFromAB) {
+        for (id contactObj in resultArray) {
             
             ABRecordRef contactRecord = (__bridge ABRecordRef)contactObj;
             
@@ -261,6 +298,10 @@
             
             if (_fieldsMask & MoContactFieldAddress) {
                 [contact setAddresses:[self arrayFromProperty:kABPersonAddressProperty ofContact:contactRecord]];
+            }
+            
+            if (_fieldsMask & MoContactFieldUrls) {
+                [contact setUrls:[self arrayFromProperty:kABPersonURLProperty ofContact:contactRecord]];
             }
             
             if (_fieldsMask & MoContactFieldNickName) {
@@ -342,6 +383,9 @@
         for (NSDictionary *data in array) {
             
             [data enumerateKeysAndObjectsUsingBlock:^(id key, id obj, BOOL *stop) {
+                if ([(NSString *) key isEqualToString:@""]) {
+                    key = nil;
+                }
                 ABMultiValueAddValueAndLabel(multiValueRef, (__bridge CFTypeRef)(obj), (__bridge CFTypeRef)(key), NULL);
             }];
             
@@ -368,11 +412,14 @@
         
         NSString *value = (__bridge_transfer NSString *)(ABMultiValueCopyValueAtIndex(multiValueRef, i));
         CFStringRef locLabel = ABMultiValueCopyLabelAtIndex(multiValueRef, i);
-        NSString *label =(__bridge_transfer NSString*)ABAddressBookCopyLocalizedLabel(locLabel);
-        
-        CFBridgingRelease(locLabel);
+        NSString *label =(__bridge NSString*)locLabel;
+        if (label == nil) {
+            label = @"";
+        }
         
         [result addObject:@{label: value}];
+
+        CFBridgingRelease(locLabel);
         
     }
     CFRelease(multiValueRef);
@@ -450,6 +497,10 @@
     if ((_fieldsMask & MoContactFieldPhones) || (contact.phones && [contact.phones count] > 0)) {
         [self updateArrayProperty:kABPersonPhoneProperty withArray:contact.phones ofContact:contactRecord error:errorRef];
     }
+    
+    if ((_fieldsMask & MoContactFieldUrls) || (contact.urls && [contact.urls count] > 0)) {
+        [self updateArrayProperty:kABPersonURLProperty withArray:contact.urls ofContact:contactRecord error:errorRef];
+    }
 
     if ((_fieldsMask & MoContactFieldEmails) || (contact.emails && [contact.emails count] > 0)) {
         [self updateArrayProperty:kABPersonEmailProperty withArray:contact.emails ofContact:contactRecord error:errorRef];
@@ -497,6 +548,11 @@
 void addressBookExternalChange(ABAddressBookRef __unused addressBookRef, CFDictionaryRef __unused info, void *context)
 {
     MoABContactsManager *manager = (__bridge MoABContactsManager *)(context);
+    // if (ABAddressBookHasUnsavedChanges(addressBookRef)) {
+    //     ABAddressBookSave(addressBookRef, NULL);
+    // } else {
+    //     ABAddressBookRevert(addressBookRef);
+    // }
     if([manager.delegate respondsToSelector:@selector(addressBookDidChange)])
     {
         [manager.delegate addressBookDidChange];

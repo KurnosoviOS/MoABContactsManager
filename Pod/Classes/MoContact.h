@@ -77,6 +77,11 @@
 @property (strong, nonatomic) NSArray *addresses;
 
 /*!
+ @abstract Contact's URL's. [{label: url}]
+ */
+@property (strong, nonatomic) NSArray *urls;
+
+/*!
  @abstract Contact's nick name.
  */
 @property (strong, nonatomic) NSString *nickName;
