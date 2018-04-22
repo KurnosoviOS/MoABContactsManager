@@ -40,12 +40,7 @@
         
         _contactsManagerQueue = dispatch_queue_create([@"io.mostachoio.moabcontactsmanager" cStringUsingEncoding:NSUTF8StringEncoding], NULL);
         
-        CFErrorRef *error = NULL;
-        _addressBook =ABAddressBookCreateWithOptions(NULL, error);
-
-        if (error) {
-            NSString *errorReason = (__bridge_transfer NSString *)CFErrorCopyFailureReason(*error);
-            NSLog(@"[MoABContactsManager] initialization error: %@", errorReason);
+        if (![self createAddressBook]) {
             return nil;
         }
         
@@ -55,6 +50,21 @@
     }
     
     return self;
+}
+
+- (BOOL) createAddressBook {
+    CFErrorRef *error = NULL;
+    _addressBook =ABAddressBookCreateWithOptions(NULL, error);
+    
+    if (error) {
+        NSString *errorReason = (__bridge_transfer NSString *)CFErrorCopyFailureReason(*error);
+        NSLog(@"[MoABContactsManager] initialization error: %@", errorReason);
+        return NO;
+    }
+    
+    [self observeAddressBook];
+    
+    return YES;
 }
 
 - (void)dealloc
@@ -214,11 +224,14 @@
         NSSet *objects;
         
         CFArrayRef records = ABAddressBookCopyArrayOfAllPeople(_addressBook);
+        
         for (CFIndex i = 0; i < CFArrayGetCount(records); i++) {
             NSMutableSet *contactSet = [NSMutableSet set];
             
             ABRecordRef record = CFArrayGetValueAtIndex(records, i);
+                        
             ABRecordID contactId = ABRecordGetRecordID(record);
+            
             [contactSet addObject:(__bridge id)record];
             
             NSArray *linkedRecordsArray = (__bridge NSArray *)ABPersonCopyArrayOfAllLinkedPeople(record);
@@ -553,11 +566,13 @@ void addressBookExternalChange(ABAddressBookRef __unused addressBookRef, CFDicti
     // } else {
     //     ABAddressBookRevert(addressBookRef);
     // }
+    
+    [manager createAddressBook];
+    
     if([manager.delegate respondsToSelector:@selector(addressBookDidChange)])
     {
         [manager.delegate addressBookDidChange];
     }
 }
-
 
 @end
